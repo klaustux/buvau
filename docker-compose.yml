@@ -1,0 +1,16 @@
+services:
+  web:
+    image: node:22-alpine
+    container_name: buvau-web
+    working_dir: /app
+    command: ["node", "server.js"]
+    environment:
+      - BUVAU_TOKEN=${BUVAU_TOKEN}
+      - BUVAU_USERS=${BUVAU_USERS}
+    volumes:
+      - ./server.js:/app/server.js:ro
+      - ./www:/app/www:ro
+      - ./data:/app/data
+    ports:
+      - "0.0.0.0:8449:8080"
+    restart: unless-stopped

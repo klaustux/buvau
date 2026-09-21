@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<base href="/">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>buvau</title>
+<style>
+  :root {
+    --bg: #000000;
+    --ocean: #0a0a0a;
+    --land: #2b2b2b;
+    --visited: #b0530f;
+    --selected: #39ff14;
+    --text: #ececea;
+    --muted: #8a887f;
+    --bar-bg: #0d0d0d;
+    --border: #2a2a2a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; height: 100dvh;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  body { display: flex; flex-direction: column; }
+  #map-wrap {
+    flex: 1 1 50%; min-height: 0;
+    position: relative;
+    background: var(--ocean);
+  }
+  #map-wrap svg { width: 100%; height: 100%; display: block; }
+  .land { fill: var(--land); stroke: var(--bg); stroke-width: 0.5; }
+  .land.visited { fill: var(--visited); }
+  .land.clickable { cursor: pointer; }
+  .city-dot { fill: #fff; stroke: var(--bg); stroke-width: 1; cursor: pointer; }
+  .lake { fill: #2a6f97; }
+  .city-dot.selected { fill: var(--selected); }
+  .city-label {
+    fill: #fff;
+    font-size: 12px; font-weight: 600;
+    paint-order: stroke;
+    stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .microstate-dot { fill: var(--land); stroke: var(--bg); stroke-width: 0.5; }
+  .microstate-dot.visited { fill: var(--visited); }
+  .microstate-dot.clickable { cursor: pointer; }
+
+  #dashboard {
+    flex: 0 0 auto;
+    text-align: center;
+    padding: 18px 0 22px;
+  }
+  #dashboard .stat-label {
+    font-size: 12px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+  #dashboard .stat-value {
+    font-size: 48px; font-weight: 700;
+    color: var(--visited);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #bar {
+    flex: 0 0 auto; height: 72px;
+    background: var(--bar-bg);
+    border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  #bar button {
+    flex: 1;
+    font-size: 14px; font-weight: 600;
+    line-height: 1.2;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #bar button .count { color: var(--visited); font-weight: 700; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: none;
+    flex-direction: column;
+  }
+  #overlay.open { display: flex; }
+  #overlay-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  #overlay-header h2 { margin: 0; font-size: 18px; }
+  #overlay-close {
+    border: none; background: none; font-size: 22px; color: var(--muted);
+    padding: 4px 8px; line-height: 1;
+  }
+  #overlay-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+  #overlay-list .row {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 16px;
+  }
+  #overlay-list .row .sub { color: var(--muted); font-size: 14px; }
+
+  .continent-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .continent-section h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+  .continent-section .continent-map { width: 100%; height: 200px; display: block; position: relative; }
+  .continent-stat {
+    position: absolute; left: 8px; bottom: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 13px; font-weight: 700;
+    color: var(--visited);
+  }
+  .continent-stat .count { color: var(--visited); font-weight: 700; margin-left: 4px; }
+
+  #country-detail-map { width: 100%; height: 260px; display: block; border-bottom: 1px solid var(--border); }
+  #overlay-list .row.clickable { -webkit-tap-highlight-color: transparent; }
+  #overlay-list .row.add-city-row { color: var(--visited); font-weight: 600; }
+  #overlay-list .row.city-list-row { display: flex; align-items: center; justify-content: space-between; }
+  .delete-city-btn {
+    background: none; border: none; color: var(--muted);
+    font-size: 18px; line-height: 1; padding: 4px 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #fab-add {
+    position: fixed; right: 16px;
+    bottom: calc(72px + 16px + env(safe-area-inset-bottom));
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--visited); color: #fff;
+    font-size: 28px; line-height: 1; font-weight: 400;
+    border: none; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #add-overlay {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: none;
+    flex-direction: column;
+  }
+  #add-overlay.open { display: flex; }
+  #add-search-wrap {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  #add-search {
+    width: 100%; box-sizing: border-box;
+    background: var(--bar-bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font-size: 16px;
+    -webkit-appearance: none;
+  }
+  #add-results { overflow-y: auto; flex: 1; padding: 4px 0; }
+  #add-results .row {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #add-results .row .sub { color: var(--muted); font-size: 14px; }
+  #add-results .row.added { color: var(--visited); }
+  #add-results .hint { padding: 16px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div id="map-wrap"></div>
+
+<div id="dashboard">
+  <div class="stat-label">Šalys</div>
+  <div class="stat-value" id="stat-countries">…</div>
+</div>
+
+<div id="bar">
+  <button id="btn-countries" type="button">Šalys <span class="count" id="count-countries">…</span></button>
+  <button id="btn-cities" type="button">Miestai <span class="count" id="count-cities">…</span></button>
+  <button id="btn-continents" type="button">Žemynai <span class="count" id="count-continents">…</span></button>
+</div>
+
+<div id="overlay">
+  <div id="overlay-header">
+    <h2 id="overlay-title"></h2>
+    <button id="overlay-close" type="button" aria-label="Uždaryti">✕</button>
+  </div>
+  <div id="overlay-list"></div>
+</div>
+
+<button id="fab-add" type="button" aria-label="Pridėti miestą">+</button>
+
+<div id="add-overlay">
+  <div id="overlay-header">
+    <h2 id="add-title">Pridėti miestą</h2>
+    <button id="add-close" type="button" aria-label="Uždaryti">✕</button>
+  </div>
+  <div id="add-search-wrap">
+    <input id="add-search" type="search" placeholder="Ieškoti miesto..." autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+  <div id="add-results"></div>
+</div>
+
+<script src="d3.min.js"></script>
+<script>
+async function loadProperties(url) {
+  const text = await (await fetch(url)).text();
+  const map = new Map();
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx === -1) continue;
+    map.set(trimmed.slice(0, idx).trim(), trimmed.slice(idx + 1).trim());
+  }
+  return map;
+}
+
+function countryName(names, code) {
+  return names.get(code) || code;
+}
+
+function rawIso(feature) {
+  const p = feature.properties;
+  return p.ISO_A2_EH !== "-99" ? p.ISO_A2_EH : p.ISO_A2;
+}
+
+// Natural Earth Rusiją žymi kaip "Europe" — čia sąmoningai priskiriama Azijai.
+const CONTINENT_OVERRIDE = { "Russia": "Asia" };
+function continentOf(feature) {
+  return CONTINENT_OVERRIDE[feature.properties.NAME] ?? feature.properties.CONTINENT;
+}
+
+// Naudotojo sprendimu Krymas žemėlapyje žymimas kaip Ukrainos dalis (žr. splitCrimeaFromRussia
+// žemiau — Natural Earth duomenyse jis fiziškai yra Rusijos MultiPolygon dalis).
+const ISO_OVERRIDE = { "Crimea": "UA" };
+
+// Krymas Natural Earth duomenyse (110m ir 10m) yra tiesiog viena iš Rusijos MultiPolygon
+// žiedų (ne atskiras "feature") — atstumas nuo žemyninės Rusijos (per Kerčės sąsiaurį,
+// vektoriniuose duomenyse nesujungtas sausuma) leidžia ją atskirti pagal koordinačių rėžį.
+function splitCrimeaFromRussia(features) {
+  const russiaIdx = features.findIndex(f => f.properties.NAME === "Russia");
+  if (russiaIdx === -1) return features;
+  const russia = features[russiaIdx];
+  const CRIMEA_BBOX = { lonMin: 32, lonMax: 37, latMin: 44, latMax: 46.5 };
+  const crimeaRings = [];
+  const restRings = [];
+  for (const ring of russia.geometry.coordinates) {
+    const poly = { type: "Feature", geometry: { type: "Polygon", coordinates: ring } };
+    const [[lon0, lat0], [lon1, lat1]] = d3.geoBounds(poly);
+    const inCrimea = lon0 >= CRIMEA_BBOX.lonMin && lon1 <= CRIMEA_BBOX.lonMax && lat0 >= CRIMEA_BBOX.latMin && lat1 <= CRIMEA_BBOX.latMax;
+    (inCrimea ? crimeaRings : restRings).push(ring);
+  }
+  if (!crimeaRings.length) return features;
+
+  const result = [...features];
+  result[russiaIdx] = { ...russia, geometry: { ...russia.geometry, coordinates: restRings } };
+  result.push({
+    type: "Feature",
+    properties: { ...russia.properties, NAME: "Crimea", ADMIN: "Crimea" },
+    geometry: { type: "MultiPolygon", coordinates: crimeaRings },
+  });
+  return result;
+}
+
+// Kai kurios šalys turi tolimus užjūrio regionus — arba SUJUNGTUS į tą patį MultiPolygon
+// (pvz. Prancūzija: žemyninė dalis + Prancūzijos Gviana Pietų Amerikoje, tas pats "feature"),
+// arba kaip ATSKIRĄ "feature" (pvz. Grenlandija — atskiras GeoJSON požymis nuo Danijos, bet
+// per SOV_A3/effectiveIso priskiriamas tai pačiai šaliai). Du žingsniai: (1) kiekvienas
+// "feature" apsivalo PATS SAVYJE — paliekami tik jo poligonai netoli JO PAČIO didžiausio
+// (Prancūzijos Gviana atkrenta, Korsika lieka); (2) tarp visos grupės "features" paliekami tik
+// tie, kurių (jau apvalytas) centras netoli NAMŲ šalies (ADMIN===SOVEREIGNT) — Grenlandija
+// atkrenta visa, Farerai (arti) lieka. Vien "didžiausias plotas" netiktų atskaitai — Grenlandija
+// ploto prasme didesnė už pačią Daniją.
+function trimSelf(feature, thresholdDeg = 15) {
+  if (feature.geometry.type !== "MultiPolygon") return feature;
+  const rings = feature.geometry.coordinates;
+  const ringFeatures = rings.map(coords => ({ type: "Feature", geometry: { type: "Polygon", coordinates: coords } }));
+  const areas = ringFeatures.map(rf => Math.abs(d3.geoArea(rf)));
+  const mainCentroid = d3.geoCentroid(ringFeatures[areas.indexOf(Math.max(...areas))]);
+  const thresholdRad = (thresholdDeg * Math.PI) / 180;
+  const kept = rings.filter((_, i) => d3.geoDistance(d3.geoCentroid(ringFeatures[i]), mainCentroid) < thresholdRad);
+  if (kept.length === rings.length) return feature;
+  return { ...feature, geometry: { type: "MultiPolygon", coordinates: kept } };
+}
+
+function featureMainCentroid(feature) {
+  if (feature.geometry.type !== "MultiPolygon") return d3.geoCentroid(feature);
+  const rings = feature.geometry.coordinates;
+  const ringFeatures = rings.map(coords => ({ type: "Feature", geometry: { type: "Polygon", coordinates: coords } }));
+  const areas = ringFeatures.map(rf => Math.abs(d3.geoArea(rf)));
+  return d3.geoCentroid(ringFeatures[areas.indexOf(Math.max(...areas))]);
+}
+
+function clusterNearMainland(features, thresholdDeg = 14) {
+  const trimmed = features.map(f => trimSelf(f));
+  const home = trimmed.find(f => f.properties.ADMIN === f.properties.SOVEREIGNT) ?? trimmed[0];
+  const homeCentroid = featureMainCentroid(home);
+  const thresholdRad = (thresholdDeg * Math.PI) / 180;
+  return trimmed.filter(f => d3.geoDistance(featureMainCentroid(f), homeCentroid) < thresholdRad);
+}
+
+// Priklausomos teritorijos (Grenlandija, Puerto Riko ir pan.) turi savo ISO kodą,
+// bet ne UN nare — žemėlapyje jos seka motininės valstybės "aplankyta" statusu
+// (grupuojama pagal Natural Earth SOV_A3 lauką).
+function buildSovereigntyResolver(world) {
+  const anchorIso = new Map();
+  for (const f of world.features) {
+    if (f.properties.ADMIN === f.properties.SOVEREIGNT) {
+      anchorIso.set(f.properties.SOV_A3, rawIso(f));
+    }
+  }
+  return feature => ISO_OVERRIDE[feature.properties.NAME] ?? anchorIso.get(feature.properties.SOV_A3) ?? rawIso(feature);
+}
+
+const CONTINENTS = ["Europe", "Asia", "Africa", "North America", "South America", "Oceania"];
+const CONTINENT_NAMES_LT = {
+  "Europe": "Europa",
+  "Asia": "Azija",
+  "Africa": "Afrika",
+  "North America": "Šiaurės Amerika",
+  "South America": "Pietų Amerika",
+  "Oceania": "Okeanija",
+};
+
+function lonWidth(feature) {
+  const [[lon0], [lon1]] = d3.geoBounds(feature);
+  const w = lon1 - lon0;
+  return w < 0 ? w + 360 : w;
+}
+
+// Natural Earth 1:110m NETURI šių šalių atskiru poligonu (per mažos šiai rezoliucijai) —
+// vietoj to jos žemėlapyje rodomos kaip taškas jų sostinės koordinatėse (iš 1:10m duomenų).
+const MICROSTATES = [
+  { iso: "MC", lon: 7.398972, lat: 43.739846 },
+  { iso: "LI", lon: 9.540922, lat: 47.138158 },
+  { iso: "VA", lon: 12.453419, lat: 41.903311 },
+];
+
+function drawMap(container, features, effectiveIso, visitedSet, onCountryClick, enableZoom, showMicrostates, cities) {
+  const width = container.clientWidth, height = container.clientHeight;
+  const svg = d3.select(container).append("svg")
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .style("overflow", "hidden");
+
+  // Rusija driekiasi per ~170° ilgumos iki datos linijos (Sibiro pusė) — jei ją įtrauktume
+  // skaičiuojant fitSize, tai sutraukytų likusią Europą į mažą kampelį. Ji vis tiek nupiešiama,
+  // tik neįtakoja rėmelio dydžio (transkontinentinėms šalims ilguma >90° realiam regionui nebūdinga).
+  const fittingFeatures = features.filter(f => lonWidth(f) < 90);
+  const collection = { type: "FeatureCollection", features: fittingFeatures.length ? fittingFeatures : features };
+  const projection = d3.geoNaturalEarth1().fitSize([width * 0.96, height * 0.96], collection);
+  const path = d3.geoPath(projection);
+
+  const g = svg.append("g");
+  const selection = g
+    .selectAll("path")
+    .data(features)
+    .join("path")
+    .attr("d", path)
+    .attr("class", f => "land" + (visitedSet.has(effectiveIso(f)) ? " visited" : "") + (onCountryClick ? " clickable" : ""));
+
+  if (onCountryClick) {
+    selection.on("click", (event, f) => onCountryClick(effectiveIso(f)));
+  }
+
+  if (showMicrostates) {
+    const dots = g
+      .selectAll("circle.microstate-dot")
+      .data(MICROSTATES)
+      .join("circle")
+      .attr("class", m => "microstate-dot" + (visitedSet.has(m.iso) ? " visited" : "") + (onCountryClick ? " clickable" : ""))
+      .attr("r", 3)
+      .attr("cx", m => projection([m.lon, m.lat])[0])
+      .attr("cy", m => projection([m.lon, m.lat])[1]);
+    if (onCountryClick) dots.on("click", (event, m) => onCountryClick(m.iso));
+  }
+
+  if (cities) {
+    const cityDots = g
+      .selectAll("circle.city-dot")
+      .data(cities)
+      .join("circle")
+      .attr("class", "city-dot" + (onCountryClick ? " clickable" : ""))
+      .attr("r", 2)
+      .attr("cx", c => projection([c.lon, c.lat])[0])
+      .attr("cy", c => projection([c.lon, c.lat])[1]);
+    if (onCountryClick) cityDots.on("click", (event, c) => onCountryClick(c.country));
+  }
+
+  if (enableZoom) {
+    svg.style("touch-action", "none");
+    const zoom = d3.zoom()
+      .scaleExtent([1, 8])
+      .translateExtent([[0, 0], [width, height]])
+      .on("zoom", event => {
+        g.attr("transform", event.transform);
+        // Taškai neturi augti kartu su priartinimu (kitaip prie 8x taptų milžiniški) —
+        // atvirkščias masteliavimas išlaiko juos vienodo dydžio ekrane. stroke-width IRGI
+        // reikia sumažinti — kitaip kontūras (juodas) prie didelio k pridengia visą baltą
+        // užpildą ir taškas atrodo kaip vientisas juodas plėmas.
+        const k = event.transform.k;
+        g.selectAll("circle.microstate-dot").attr("r", 3 / k).style("stroke-width", 0.5 / k);
+        g.selectAll("circle.city-dot").attr("r", 2 / k).style("stroke-width", 1 / k);
+      });
+    svg.call(zoom);
+  }
+}
+
+function drawCountryMap(container, features, cities, lakes) {
+  const width = container.clientWidth, height = container.clientHeight;
+  const svg = d3.select(container).append("svg")
+    .attr("viewBox", `0 0 ${width} ${height}`)
+    .style("overflow", "hidden");
+
+  const collection = { type: "FeatureCollection", features };
+  const projection = d3.geoNaturalEarth1().fitSize([width * 0.9, height * 0.9], collection);
+  const path = d3.geoPath(projection);
+
+  const g = svg.append("g"); // vienas bendras sluoksnis — kad zoom/pan judintų viską kartu
+
+  g.append("g")
+    .selectAll("path")
+    .data(features)
+    .join("path")
+    .attr("d", path)
+    .attr("class", "land visited");
+
+  if (lakes && lakes.length) {
+    g.append("g")
+      .selectAll("path")
+      .data(lakes)
+      .join("path")
+      .attr("d", path)
+      .attr("class", "lake");
+  }
+
+  const dots = g.append("g")
+    .selectAll("circle")
+    .data(cities)
+    .join("circle")
+    .attr("class", "city-dot")
+    .attr("r", 3.5)
+    .attr("cx", c => projection([c.lon, c.lat])[0])
+    .attr("cy", c => projection([c.lon, c.lat])[1]);
+
+  // "Kuris taškas yra kuris miestas": paspaudus, taškas pasikeičia spalva IR šalia
+  // pasirodo pavadinimas. Vienas bendras <text> elementas perpanaudojamas kiekvienam
+  // paspaudimui (ne kuriamas naujas), pozicija/tekstas tiesiog perrašomi.
+  const label = g.append("text").attr("class", "city-label").style("display", "none");
+
+  function selectDot(dotEl, cityName) {
+    dots.classed("selected", false);
+    d3.select(dotEl).classed("selected", true);
+
+    const cx = +dotEl.getAttribute("cx"), cy = +dotEl.getAttribute("cy");
+    const nearRightEdge = cx > width * 0.65;
+    label
+      .attr("x", nearRightEdge ? cx - 8 : cx + 8)
+      .attr("text-anchor", nearRightEdge ? "end" : "start")
+      .attr("y", cy - 7)
+      .text(cityName)
+      .style("display", null);
+  }
+
+  dots.on("click", function (event, c) { selectDot(this, c.name); });
+
+  svg.style("touch-action", "none");
+  const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .translateExtent([[0, 0], [width, height]])
+    .on("zoom", event => {
+      g.attr("transform", event.transform);
+      // Taškai ir pavadinimo etiketė neturi augti kartu su priartinimu (kitaip prie 8x
+      // šriftas taptų milžiniškas) — atvirkščias masteliavimas išlaiko juos vienodo dydžio.
+      // Taškų stroke-width IRGI mažinam — kitaip juodas kontūras prie didelio k pridengia
+      // visą baltą užpildą ir taškas atrodo kaip vientisas juodas plėmas.
+      const k = event.transform.k;
+      dots.attr("r", 3.5 / k).style("stroke-width", 1 / k);
+      label.style("font-size", `${12 / k}px`).style("stroke-width", `${3 / k}px`);
+    });
+  svg.call(zoom);
+
+  // Leidžia išorei (sąrašui po žemėlapiu) paryškinti tašką paspaudus miestą sąraše.
+  return {
+    selectCity(geonameId) {
+      const node = dots.filter(c => c.geonameId === geonameId).node();
+      const city = cities.find(c => c.geonameId === geonameId);
+      if (node && city) selectDot(node, city.name);
+    },
+  };
+}
+
+const TOTAL_COUNTRIES = 195; // 193 JT narės + 2 stebėtojos (Vatikanas, Palestina)
+
+async function main() {
+  const [world, visits, countryNames] = await Promise.all([
+    fetch("world-110m.geojson").then(r => r.json()),
+    fetch("/api/visits").then(r => r.json()),
+    loadProperties("i18n/countries_lt.properties"),
+  ]);
+
+  world.features = splitCrimeaFromRussia(world.features);
+
+  const visitedSet = new Set(visits.countries);
+  const effectiveIso = buildSovereigntyResolver(world);
+  const mapWrap = document.getElementById("map-wrap");
+  let openAddCity;
+  // Kas šiuo metu rodoma #overlay viduje (Šalys/Miestai/Žemynai/šalies detalė) — kad pridėjus
+  // miestą per "+" (bet kuriuo keliu) būtų galima tą patį vaizdą atkurti su šviežiais duomenimis,
+  // nesvarbu, ar jis buvo atidarytas prieš tai, ar po jo dar atidarytas paieškos langas viršuje.
+  // currentCountry — jei šiuo metu atidarytas konkrečios šalies vaizdas, jos ISO kodas.
+  // Naudojama, kad plūduriuojantis "+" mygtukas žinotų kontekstą (šalies vaizde — siūlo tik
+  // tos šalies miestus, kitur — visą pasaulį), o ne visada rodytų vieną tą patį elgesį.
+  const overlayState = { refresh: null, currentCountry: null };
+
+  function redrawMap() {
+    mapWrap.innerHTML = "";
+    drawMap(mapWrap, world.features, effectiveIso, visitedSet, openCountryDetail, true, true, visits.cities);
+  }
+
+  async function deleteCity(city, iso) {
+    if (!confirm(`Ištrinti ${city.name}?`)) return;
+    try {
+      // Kaip ir pridedant — remiamasi NAUJAUSIA serverio būsena, ne vietine kopija (žr.
+      // Pasvalio istoriją anksčiau). saveVisits() reikalauja rašymo tokeno — be jo/su
+      // neteisingu 401, ištrynimas neįvyksta.
+      const fresh = await fetch("/api/visits").then(r => r.json());
+      fresh.cities = fresh.cities.filter(c => c.geonameId !== city.geonameId);
+      if (!fresh.cities.some(c => c.country === city.country)) {
+        fresh.countries = fresh.countries.filter(code => code !== city.country);
+      }
+
+      const saved = await saveVisits(fresh);
+      visits.cities = saved.cities;
+      visits.countries = saved.countries;
+      visits.updatedAt = saved.updatedAt;
+      visitedSet.clear();
+      for (const c of visits.countries) visitedSet.add(c);
+
+      renderCounts();
+      redrawMap();
+      openCountryDetail(iso, { pushHistory: false });
+    } catch (e) {
+      alert("Nepavyko ištrinti: " + e.message);
+    }
+  }
+
+  async function openCountryDetail(iso, { pushHistory = true } = {}) {
+    if (pushHistory) history.pushState({}, "", `/salis/${iso}`);
+    overlayState.refresh = () => openCountryDetail(iso, { pushHistory: false });
+    overlayState.currentCountry = iso;
+    const cities = visits.cities.filter(c => c.country === iso);
+
+    overlayTitle.textContent = `${countryName(countryNames, iso)} (${cities.length})`;
+    overlayList.innerHTML = `<div class="hint">Kraunama...</div>`;
+    overlay.classList.add("open");
+
+    // Iš anksto (build-country-details.mjs) paruoštas 1:10m ribų failas šiai šaliai —
+    // 1:110m per grubus priartinus prie vienos šalies. Jei tokio failo nėra (retas ISO
+    // kodas), krentama atgal ant 110m pasaulio duomenų.
+    let features;
+    try {
+      const res = await fetch(`countries-10m/${iso}.json`);
+      if (!res.ok) throw new Error("no 10m file");
+      features = (await res.json()).features;
+    } catch {
+      features = clusterNearMainland(world.features.filter(f => effectiveIso(f) === iso));
+    }
+
+    // Ežerai — kol kas tik keliom šalim rankomis paruošti (žr. build-country-details.mjs
+    // aplinkinį kontekstą spec.md), failo daugumai šalių nėra — tyliai ignoruojam 404.
+    let lakes = [];
+    try {
+      const res = await fetch(`countries-10m/${iso}-lakes.json`);
+      if (res.ok) lakes = (await res.json()).features;
+    } catch {}
+
+    overlayList.innerHTML = "";
+
+    let mapControls = null;
+    if (features.length) {
+      const mapDiv = document.createElement("div");
+      mapDiv.id = "country-detail-map";
+      overlayList.appendChild(mapDiv);
+      mapControls = drawCountryMap(mapDiv, features, cities, lakes);
+    }
+
+    const addRow = document.createElement("div");
+    addRow.className = "row clickable add-city-row";
+    addRow.textContent = "+ Pridėti miestą";
+    addRow.addEventListener("click", () => openAddCity({ countryFilter: iso }));
+    overlayList.appendChild(addRow);
+
+    if (!cities.length) {
+      overlayList.insertAdjacentHTML("beforeend", `<div class="hint">Nėra pažymėtų miestų šioje šalyje</div>`);
+      return;
+    }
+    for (const c of [...cities].sort((a, b) => a.name.localeCompare(b.name, "lt"))) {
+      const div = document.createElement("div");
+      div.className = "row clickable city-list-row";
+      div.innerHTML = `<div>${c.name}</div>`;
+      div.addEventListener("click", () => mapControls?.selectCity(c.geonameId));
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "delete-city-btn";
+      delBtn.textContent = "✕";
+      delBtn.setAttribute("aria-label", `Ištrinti ${c.name}`);
+      delBtn.addEventListener("click", event => {
+        event.stopPropagation(); // kad neatidarytų selectCity
+        deleteCity(c, iso);
+      });
+      div.appendChild(delBtn);
+
+      overlayList.appendChild(div);
+    }
+  }
+
+  function renderCounts() {
+    document.getElementById("count-countries").textContent = `(${visits.countries.length})`;
+    document.getElementById("count-cities").textContent = `(${visits.cities.length})`;
+    document.getElementById("stat-countries").textContent = `${visits.countries.length}/${TOTAL_COUNTRIES}`;
+
+    const visitedContinents = CONTINENTS.filter(continent =>
+      world.features.some(f =>
+        continentOf(f) === continent &&
+        f.properties.ADMIN === f.properties.SOVEREIGNT && // tik suverenios šalys, ne tolimos priklausomos teritorijos
+        visitedSet.has(effectiveIso(f))
+      )
+    );
+    document.getElementById("count-continents").textContent = `(${visitedContinents.length})`;
+  }
+
+  redrawMap();
+  renderCounts();
+
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlay-title");
+  const overlayList = document.getElementById("overlay-list");
+  const addOverlay = document.getElementById("add-overlay");
+
+  function openOverlay(title, rows) {
+    overlayTitle.textContent = title;
+    overlayList.innerHTML = "";
+    for (const row of rows) {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = row;
+      overlayList.appendChild(div);
+    }
+    overlay.classList.add("open");
+  }
+
+  function showCountriesList({ pushHistory = true } = {}) {
+    if (pushHistory) history.pushState({}, "", "/salys");
+    overlayState.refresh = () => showCountriesList({ pushHistory: false });
+    overlayState.currentCountry = null;
+    overlayTitle.textContent = `Šalys (${visits.countries.length})`;
+    overlayList.innerHTML = "";
+    overlay.classList.add("open");
+    const sorted = [...visits.countries].sort((a, b) =>
+      countryName(countryNames, a).localeCompare(countryName(countryNames, b), "lt")
+    );
+    for (const code of sorted) {
+      const div = document.createElement("div");
+      div.className = "row clickable";
+      div.textContent = countryName(countryNames, code);
+      div.addEventListener("click", () => openCountryDetail(code));
+      overlayList.appendChild(div);
+    }
+  }
+  document.getElementById("btn-countries").addEventListener("click", showCountriesList);
+
+  function showCitiesList({ pushHistory = true } = {}) {
+    if (pushHistory) history.pushState({}, "", "/miestai");
+    overlayState.refresh = () => showCitiesList({ pushHistory: false });
+    overlayState.currentCountry = null;
+    const rows = [...visits.cities]
+      .sort((a, b) => a.name.localeCompare(b.name, "lt"))
+      .map(c => `<div>${c.name}</div><div class="sub">${countryName(countryNames, c.country)}</div>`);
+    openOverlay(`Miestai (${visits.cities.length})`, rows);
+  }
+  document.getElementById("btn-cities").addEventListener("click", showCitiesList);
+
+  function showContinents({ pushHistory = true } = {}) {
+    if (pushHistory) history.pushState({}, "", "/zemynai");
+    overlayState.refresh = () => showContinents({ pushHistory: false });
+    overlayState.currentCountry = null;
+    overlayTitle.textContent = "Žemynai";
+    overlayList.innerHTML = "";
+    overlay.classList.add("open"); // pirma padaryti matomą — d3 fitSize reikia realaus clientWidth/Height
+    for (const continent of CONTINENTS) {
+      const byCountry = new Map();
+      for (const f of world.features.filter(f => continentOf(f) === continent)) {
+        const key = effectiveIso(f);
+        if (!byCountry.has(key)) byCountry.set(key, []);
+        byCountry.get(key).push(f);
+      }
+      // grupuojama pagal šalį PRIEŠ clusterNearMainland — kitaip "didžiausias poligonas visame
+      // žemyne" taptų vieninteliu atskaitos tašku ir nubrauktų visas kitas šalis kaip "per toli"
+      const features = [...byCountry.values()].flatMap(group => clusterNearMainland(group));
+      const section = document.createElement("div");
+      section.className = "continent-section";
+      section.innerHTML = `<h3>${CONTINENT_NAMES_LT[continent]}</h3>`;
+      const mapDiv = document.createElement("div");
+      mapDiv.className = "continent-map";
+      section.appendChild(mapDiv);
+      overlayList.appendChild(section);
+      drawMap(mapDiv, features, effectiveIso, visitedSet);
+
+      // Procentui/kiekiui skaičiuoti imamos tik pačios suverenios šalys (ADMIN === SOVEREIGNT),
+      // ne jų priklausomos teritorijos kituose žemynuose (pvz. Folklandai priklauso JK, bet yra
+      // Pietų Amerikoje — jų nevalia įskaityti kaip "aplankyta Pietų Amerika").
+      const isoSet = new Set(
+        features.filter(f => f.properties.ADMIN === f.properties.SOVEREIGNT).map(effectiveIso)
+      );
+      const visitedCount = [...isoSet].filter(iso => visitedSet.has(iso)).length;
+      const pct = isoSet.size ? Math.round((visitedCount / isoSet.size) * 100) : 0;
+      const stat = document.createElement("div");
+      stat.className = "continent-stat";
+      stat.innerHTML = `${pct}%<span class="count">| ${visitedCount}</span>`;
+      mapDiv.appendChild(stat);
+    }
+  }
+  document.getElementById("btn-continents").addEventListener("click", showContinents);
+
+  // URL maršrutai — kad atidarius šalį/žemynus/sąrašus keistųsi adresas ir veiktų naršyklės
+  // "atgal" (anksčiau tai buvo tik JS state, tad "atgal" tiesiog išmesdavo iš puslapio).
+  function dispatchRoute(path, { pushHistory }) {
+    const countryMatch = path.match(/^\/salis\/([A-Za-z]{2,3})$/i);
+    if (countryMatch) {
+      openCountryDetail(countryMatch[1].toUpperCase(), { pushHistory });
+    } else if (path === "/zemynai") {
+      showContinents({ pushHistory });
+    } else if (path === "/salys") {
+      showCountriesList({ pushHistory });
+    } else if (path === "/miestai") {
+      showCitiesList({ pushHistory });
+    } else {
+      overlay.classList.remove("open");
+      overlayState.currentCountry = null;
+    }
+    addOverlay.classList.remove("open"); // atgal/pirmyn visada uždaro virš esantį paieškos langą
+  }
+
+  window.addEventListener("popstate", () => dispatchRoute(location.pathname, { pushHistory: false }));
+
+  document.getElementById("overlay-close").addEventListener("click", () => {
+    history.back();
+  });
+
+  // Jei puslapis atidarytas TIESIOG per pošalies/žemyno URL (atnaujinus F5, arba per nuorodą) —
+  // dabartinis (vienintelis) history įrašas pakeičiamas į namų "/", o tada užpakalyje jo
+  // "užstumiamas" realus maršrutas. Taip "atgal" visada turi kur grįžti ŠITAME puslapyje,
+  // o ne iš karto išeina iš svetainės.
+  if (location.pathname !== "/" && location.pathname !== "/index.html") {
+    const initialPath = location.pathname;
+    history.replaceState({}, "", "/");
+    dispatchRoute(initialPath, { pushHistory: true });
+  }
+
+  ({ openAddCity } = setupAddCity({ world, visits, countryNames, visitedSet, redrawMap, renderCounts, overlayState }));
+}
+
+function normalizeSearch(s) {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function getAuthToken() {
+  let token = localStorage.getItem("buvauToken");
+  if (!token) {
+    token = prompt("Prieigos raktas (rašymui):") || "";
+    if (token) localStorage.setItem("buvauToken", token);
+  }
+  return token;
+}
+
+async function saveVisits(visits) {
+  let token = getAuthToken();
+  let res = await fetch("/api/visits", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify(visits),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("buvauToken");
+    token = getAuthToken();
+    res = await fetch("/api/visits", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify(visits),
+    });
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+let citiesSearchData = null;
+async function loadCitiesSearchData() {
+  if (!citiesSearchData) {
+    citiesSearchData = await fetch("cities-search.json").then(r => r.json());
+  }
+  return citiesSearchData;
+}
+
+function setupAddCity({ world, visits, countryNames, visitedSet, redrawMap, renderCounts, overlayState }) {
+  const overlay = document.getElementById("overlay");
+  const fab = document.getElementById("fab-add");
+  const addOverlay = document.getElementById("add-overlay");
+  const addTitle = document.getElementById("add-title");
+  const addSearch = document.getElementById("add-search");
+  const addResults = document.getElementById("add-results");
+  const addedIds = new Set(visits.cities.map(c => c.geonameId));
+
+  let countryFilter = null;
+
+  function renderResults(query) {
+    if (!query.trim()) {
+      addResults.innerHTML = `<div class="hint">Įvesk miesto pavadinimą (bent 2 raidės)</div>`;
+      return;
+    }
+    if (query.trim().length < 2) {
+      addResults.innerHTML = `<div class="hint">Įvesk bent 2 raides</div>`;
+      return;
+    }
+    const q = normalizeSearch(query.trim());
+    const matches = [];
+    for (const row of citiesSearchData) {
+      if (countryFilter && row[2] !== countryFilter) continue;
+      // row[5] — alternatyvūs (dažnai angliški) pavadinimai, pvz. "Heraklion" GeoNames
+      // pagrindiniam vardui "Irákleion". Yra tik didesniems miestams (žr. build-cities.mjs).
+      const nameMatch = normalizeSearch(row[1]).includes(q);
+      const altMatch = row[5] && normalizeSearch(row[5]).includes(q);
+      if (nameMatch || altMatch) {
+        matches.push(row);
+        if (matches.length >= 40) break;
+      }
+    }
+    addResults.innerHTML = "";
+    if (!matches.length) {
+      addResults.innerHTML = `<div class="hint">Nieko nerasta</div>`;
+      return;
+    }
+    for (const [geonameId, name, country, lat, lon] of matches) {
+      const div = document.createElement("div");
+      div.className = "row" + (addedIds.has(geonameId) ? " added" : "");
+      div.innerHTML = `<div>${addedIds.has(geonameId) ? "✓ " : ""}${name}</div><div class="sub">${countryName(countryNames, country)}</div>`;
+      div.addEventListener("click", () => addCity({ geonameId, name, country, lat, lon }, div));
+      addResults.appendChild(div);
+    }
+  }
+
+  async function addCity(city, rowEl) {
+    if (addedIds.has(city.geonameId)) return;
+    addedIds.add(city.geonameId); // iškart, kad dvigubas paspaudimas nesikartotų
+
+    try {
+      // API perrašo VISĄ JSON (ne patch) — jei šis puslapis atidarytas dar viename lange/
+      // įrenginyje, jo atmintyje laikoma kopija gali būti pasenusi. Todėl prieš siunčiant
+      // imamas NAUJAUSIAS serverio state'as ir miestas pridedamas PRIE JO, o ne prie galimai
+      // pasenusios vietinės `visits` kopijos — kitaip PUT gali tyliai ištrinti tarp laiko kito
+      // lango pridėtus miestus (būtent taip dingo Pasvalys 2026-09-15).
+      const fresh = await fetch("/api/visits").then(r => r.json());
+      if (!fresh.cities.some(c => c.geonameId === city.geonameId)) fresh.cities.push(city);
+      if (!fresh.countries.includes(city.country)) fresh.countries.push(city.country);
+
+      const saved = await saveVisits(fresh);
+      visits.cities = saved.cities;
+      visits.countries = saved.countries;
+      visits.updatedAt = saved.updatedAt;
+      visitedSet.clear();
+      for (const c of visits.countries) visitedSet.add(c);
+      addedIds.clear();
+      for (const c of visits.cities) addedIds.add(c.geonameId);
+
+      rowEl.classList.add("added");
+      rowEl.innerHTML = `<div>✓ ${city.name}</div><div class="sub">${countryName(countryNames, city.country)}</div>`;
+      renderCounts();
+      redrawMap();
+      // Jei #overlay šiuo metu atviras (Šalys/Miestai/Žemynai/šalies detalė — nesvarbu, kuris
+      // atidarytas prieš šį paieškos langą), atnaujinam jį po pridėjimo. Tikrinam "open" klasę,
+      // kad neatidarytume juo be reikalo, jei naudotojas jį jau buvo uždaręs.
+      if (overlayState.refresh && overlay.classList.contains("open")) overlayState.refresh();
+    } catch (e) {
+      addedIds.delete(city.geonameId);
+      alert("Nepavyko išsaugoti: " + e.message);
+    }
+  }
+
+  const debouncedRender = debounce(() => renderResults(addSearch.value), 150);
+
+  async function openAddCity({ countryFilter: filter = null } = {}) {
+    countryFilter = filter;
+    addTitle.textContent = filter ? `Pridėti miestą (${countryName(countryNames, filter)})` : "Pridėti miestą";
+    addSearch.value = "";
+    addOverlay.classList.add("open");
+    addResults.innerHTML = `<div class="hint">Kraunama...</div>`;
+    await loadCitiesSearchData();
+    renderResults(addSearch.value);
+    addSearch.focus();
+  }
+
+  // Plūduriuojantis "+" žino kontekstą: jei atidarytas konkrečios šalies vaizdas — siūlo tik
+  // tos šalies miestus, kitaip (namie, Šalys/Miestai/Žemynai sąrašuose) — visą pasaulį.
+  fab.addEventListener("click", () => openAddCity({ countryFilter: overlayState.currentCountry }));
+
+  document.getElementById("add-close").addEventListener("click", () => {
+    addOverlay.classList.remove("open");
+    addSearch.value = "";
+    addResults.innerHTML = "";
+  });
+
+  addSearch.addEventListener("input", debouncedRender);
+
+  return { openAddCity };
+}
+
+main();
+</script>
+</body>
+</html>

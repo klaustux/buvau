@@ -1,0 +1,17 @@
+# paslaptys
+.env
+
+# asmeniniai/kintantys duomenys (runtime state, ne kodas)
+data/
+klaustux.csv
+visits.json
+visits.import.json
+
+# dideli žaliaviniai šaltiniai — reprodukuojami per build scriptus (build-cities.mjs,
+# build-country-details.mjs), nereikia laikyti git'e
+cities1000.txt
+cities1000.zip
+world-10m.geojson
+
+# vidinis darbinis dokumentas — infrastruktūros/sprendimų aprašymas, ne skirtas viešai
+spec.md
